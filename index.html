@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Math Meme Generator</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/14.2.1/math.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&display=swap');
+
+        body { 
+            font-family: sans-serif; 
+            margin: 20px; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+        }
+        #canvasContainer { 
+            border: 1px solid black; 
+            margin-bottom: 10px; 
+            position: relative; /* Ensures functionOutput is positioned relative to this */
+            background-color: #333; /* Darker background for canvas if image is transparent/small */
+        }
+        canvas { 
+            display: block; 
+        }
+        #controls { 
+            margin-bottom: 10px; 
+            display: flex; /* Align buttons and input nicely */
+            gap: 10px; /* Space between control elements */
+            align-items: center;
+        }
+        #functionOutput { 
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            padding: 5px 8px; 
+            background-color: rgba(0, 0, 0, 0.5); /* Semi-transparent black background */
+            color: #00ff00; /* Bright green HUD text */
+            font-family: 'Roboto Mono', monospace;
+            font-size: 0.9em;
+            border-radius: 3px;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.7);
+            pointer-events: none; /* Allows clicks to pass through to the canvas */
+            max-width: calc(100% - 20px); /* Ensure it doesn't overflow container */
+            box-sizing: border-box;
+        }
+        #errorMessage { 
+            color: red; 
+            margin-bottom: 10px;
+            min-height: 1.2em; /* Prevent layout shift when message appears/disappears */
+        }
+    </style>
+</head>
+<body>
+    <h1>Math Meme Generator</h1>
+
+    <div id="errorMessage"></div>
+
+    <div id="controls">
+        <input type="file" id="imageLoader" accept="image/*">
+        <p>Drawing Tools (coming soon):</p>
+        <button id="rectTool" disabled>Select Rectangle</button> 
+        <button id="ellipseTool" disabled>Select Ellipse</button> 
+    </div>
+
+    <div id="canvasContainer">
+        <canvas id="imageCanvas"></canvas>
+    </div>
+
+    <h2>Generated Mathematical Function:</h2>
+    <div id="functionOutput">
+        <p>Your function will appear here...</p>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const imageLoader = document.getElementById('imageLoader');
+            const canvas = document.getElementById('imageCanvas');
+            const ctx = canvas.getContext('2d');
+            const functionOutput = document.getElementById('functionOutput');
+            const errorMessage = document.getElementById('errorMessage');
+            const rectToolButton = document.getElementById('rectTool');
+            const ellipseToolButton = document.getElementById('ellipseTool');
+
+            let currentImage = null; // To store the loaded image object
+            let isDrawing = false;
+            let isRectToolActive = false;
+            let startX, startY, endX, endY;
+            let selectionRect = null; // To store the current selection {x, y, width, height}
+            let isEllipseToolActive = false;
+            let ellipsePoints = [];
+
+            // Set canvas to a default size initially for the placeholder
+            canvas.width = 500;
+            canvas.height = 300;
+
+            function displayPlaceholder() {
+                ctx.clearRect(0, 0, canvas.width, canvas.height); // Clear canvas
+                ctx.fillStyle = '#f0f0f0';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = 'black';
+                ctx.textAlign = 'center';
+                ctx.font = '16px Arial';
+                ctx.fillText("Upload an image to start or if an error occurred.", canvas.width / 2, canvas.height / 2);
+                currentImage = null; // Reset current image
+                rectToolButton.disabled = true; // Disable tool if no image
+                ellipseToolButton.disabled = true; // Disable ellipse tool too
+                selectionRect = null;
+                ellipsePoints = []; // Clear points
+            }
+
+            displayPlaceholder(); // Initial placeholder message
+
+            imageLoader.addEventListener('change', (event) => {
+                const file = event.target.files[0];
+                errorMessage.textContent = '';
+                functionOutput.innerHTML = '<p>Your function will appear here...</p>';
+                isRectToolActive = false; // Deactivate tool on new image
+                selectionRect = null; // Clear previous selection
+
+                if (!file) {
+                    canvas.width = 500; // Reset to default size
+                    canvas.height = 300;
+                    displayPlaceholder();
+                    return;
+                }
+
+                if (!file.type.startsWith('image/')) {
+                    errorMessage.textContent = 'Error: Please upload an image file.';
+                    canvas.width = 500; // Reset to default size
+                    canvas.height = 300;
+                    displayPlaceholder();
+                    return;
+                }
+
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        currentImage = img; // Store the image
+                        canvas.width = img.width;
+                        canvas.height = img.height;
+                        ctx.drawImage(img, 0, 0);
+                        rectToolButton.disabled = false; // Enable rect tool
+                        ellipseToolButton.disabled = false; // Enable ellipse tool
+                    }
+                    img.onerror = () => {
+                        errorMessage.textContent = 'Error: Could not load the image.';
+                        displayPlaceholder();
+                    }
+                    img.src = e.target.result;
+                }
+                reader.onerror = () => {
+                    errorMessage.textContent = 'Error: Could not read the file.';
+                    displayPlaceholder();
+                }
+                reader.readAsDataURL(file);
+            });
+
+            rectToolButton.addEventListener('click', () => {
+                if (!currentImage) {
+                    errorMessage.textContent = "Please upload an image first.";
+                    return;
+                }
+                isRectToolActive = false; // Deactivate ellipse tool
+                isEllipseToolActive = false; // Deactivate ellipse tool
+                canvas.style.cursor = 'crosshair';
+                errorMessage.textContent = 'Rectangle tool active. Click and drag on the image.';
+                functionOutput.innerHTML = '<p>Your function will appear here...</p>'; // Clear old function
+                selectionRect = null; // Clear previous selection rectangle data
+                ellipsePoints = []; // Clear ellipse points
+                redrawImageAndSelection(); // Redraw to remove old selection if any
+            });
+
+            ellipseToolButton.addEventListener('click', () => {
+                if (!currentImage) {
+                    errorMessage.textContent = "Please upload an image first.";
+                    return;
+                }
+
+                if (!isEllipseToolActive || ellipsePoints.length < 5) {
+                    isRectToolActive = false;
+                    isEllipseToolActive = true;
+                    // ellipsePoints = []; // Don't clear points if tool is already active, allow adding more
+                    canvas.style.cursor = 'crosshair';
+                    errorMessage.textContent = `Ellipse tool active. Click at least 5 points on the image. Currently: ${ellipsePoints.length} points. Click tool button again when done.`;
+                    functionOutput.innerHTML = '<p>Your function will appear here...</p>';
+                    selectionRect = null;
+                    redrawImageAndSelection();
+                } else { // Enough points and tool is active, so try to fit
+                    errorMessage.textContent = `Attempting to fit ellipse to ${ellipsePoints.length} points...`;
+                    try {
+                        const conicCoefficients = fitEllipse(ellipsePoints);
+                        if (conicCoefficients) {
+                            displayEllipseEquation(conicCoefficients);
+                            drawFittedEllipse(conicCoefficients); // This will also call redrawImageAndSelection
+                            errorMessage.textContent = `Ellipse fitted. ${ellipsePoints.length} points used.`;
+                        } else {
+                            errorMessage.textContent = "Could not fit ellipse. Please try different points.";
+                        }
+                    } catch (error) {
+                        console.error("Ellipse fitting error:", error);
+                        errorMessage.textContent = `Error fitting ellipse: ${error.message}. Try different points.`;
+                        functionOutput.innerHTML = '<p>Error during fitting.</p>';
+                    }
+                }
+            });
+
+            function fitEllipse(points) {
+                if (points.length < 5) return null; // Need at least 5 points for a non-degenerate conic
+
+                // Design matrix D
+                const D_rows = points.map(p => [p.x * p.x, p.x * p.y, p.y * p.y, p.x, p.y, 1]);
+                const D = math.matrix(D_rows);
+
+                try {
+                    const D_svd = math.svd(D); // D = U S V^T
+                    const a = math.column(D_svd.V, D_svd.V.size()[1] - 1); // Last column of V (smallest singular value)
+                    
+                    let [A, B, C, D_coeff, E_coeff, F_coeff] = a.toArray().flat();
+
+                    if (4 * A * C - B * B <= 0) {
+                         console.warn("Fitted conic is not an ellipse or is degenerate based on A,B,C from SVD only.");
+                         // return null; // Or try to proceed with caution
+                    }
+                    return { A, B, C, D: D_coeff, E: E_coeff, F: F_coeff };
+
+                } catch (err) {
+                    console.error("Error in SVD based fitting:", err);
+                    return null;
+                }
+            }
+
+            function displayEllipseEquation(coeffs) {
+                if (!coeffs) {
+                    functionOutput.innerHTML = "<p>Could not determine ellipse equation.</p>";
+                    return;
+                }
+                // Using math.format to make numbers more readable
+                const A = math.format(coeffs.A, {notation: 'fixed', precision: 3});
+                const B = math.format(coeffs.B, {notation: 'fixed', precision: 3});
+                const C = math.format(coeffs.C, {notation: 'fixed', precision: 3});
+                const D_c = math.format(coeffs.D, {notation: 'fixed', precision: 3});
+                const E_c = math.format(coeffs.E, {notation: 'fixed', precision: 3});
+                const F_c = math.format(coeffs.F, {notation: 'fixed', precision: 3});
+
+                functionOutput.innerHTML = `
+                    <p><strong>Fitted Ellipse (Conic Section):</strong></p>
+                    <p>${A}x<sup>2</sup> + ${B}xy + ${C}y<sup>2</sup> + ${D_c}x + ${E_c}y + ${F_c} = 0</p>
+                    <p><small>(Note: This is a general conic. Parameters might not form a visible ellipse if points are not suitable.)</small></p>
+                `;
+            }
+
+            function drawFittedEllipse(coeffs) {
+                redrawImageAndSelection(); // Redraw base image and user-clicked points
+                if (!coeffs) return;
+
+                const { A, B, C, D: D_coeff, E: E_coeff, F: F_coeff } = coeffs;
+
+                ctx.strokeStyle = 'green';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+
+                let pointsDrawn = 0;
+                const step = 1; // Pixel step
+                
+                // Attempt for y1 path
+                let firstY1 = true;
+                for (let x = 0; x < canvas.width; x += step) {
+                    const q_a = C;
+                    const q_b = B * x + E_coeff;
+                    const q_c = A * x * x + D_coeff * x + F_coeff;
+                    const discriminant = q_b * q_b - 4 * q_a * q_c;
+                    if (discriminant >= 0) {
+                        const y = (-q_b + Math.sqrt(discriminant)) / (2 * q_a);
+                        if (y >= 0 && y <= canvas.height) {
+                            if (firstY1) { ctx.moveTo(x, y); firstY1 = false; }
+                            else { ctx.lineTo(x, y); }
+                            pointsDrawn++;
+                        } else { firstY1 = true; /* break path if y is out of bounds */ }
+                    } else { firstY1 = true; }
+                }
+                // Attempt for y2 path (reversed to connect better potentially)
+                let firstY2 = true;
+                for (let x = canvas.width - 1; x >= 0; x -= step) {
+                    const q_a = C;
+                    const q_b = B * x + E_coeff;
+                    const q_c = A * x * x + D_coeff * x + F_coeff;
+                    const discriminant = q_b * q_b - 4 * q_a * q_c;
+                    if (discriminant >= 0) {
+                        const y = (-q_b - Math.sqrt(discriminant)) / (2 * q_a);
+                         if (y >= 0 && y <= canvas.height) {
+                            if (firstY1 && firstY2) { ctx.moveTo(x,y); /* If y1 path was empty */ }
+                            else if (firstY2) { ctx.lineTo(x, y); /* Connect from end of y1 path */ }
+                            else { ctx.lineTo(x, y); }
+                            firstY2 = false;
+                            pointsDrawn++;
+                        } else { firstY2 = true; }
+                    } else { firstY2 = true; }
+                }
+                ctx.stroke();
+                if(pointsDrawn === 0){ 
+                     errorMessage.textContent += " Could not draw the ellipse (no valid points on canvas).";
+                }
+            }
+
+            function redrawImageAndSelection() {
+                if (!currentImage) return;
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(currentImage, 0, 0);
+
+                if (selectionRect) { // Draw rectangle if it exists
+                    ctx.strokeStyle = 'red';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(selectionRect.x, selectionRect.y, selectionRect.width, selectionRect.height);
+                }
+
+                if (isEllipseToolActive && ellipsePoints.length > 0) {
+                    ctx.fillStyle = 'blue'; // Color for ellipse points
+                    ctx.strokeStyle = 'rgba(0, 0, 255, 0.5)'; // Color for lines connecting points
+                    ctx.lineWidth = 1;
+
+                    for (let i = 0; i < ellipsePoints.length; i++) {
+                        const point = ellipsePoints[i];
+                        ctx.beginPath();
+                        ctx.arc(point.x, point.y, 3, 0, 2 * Math.PI); // Draw a small circle for each point
+                        ctx.fill();
+
+                        // Draw lines connecting points as they are added
+                        if (i > 0) {
+                            const prevPoint = ellipsePoints[i-1];
+                            ctx.beginPath();
+                            ctx.moveTo(prevPoint.x, prevPoint.y);
+                            ctx.lineTo(point.x, point.y);
+                            ctx.stroke();
+                        }
+                    }
+                    // Optionally, connect the last point to the first if enough points are present
+                    if (ellipsePoints.length > 2) {
+                         // ctx.beginPath();
+                         // ctx.moveTo(ellipsePoints[ellipsePoints.length-1].x, ellipsePoints[ellipsePoints.length-1].y);
+                         // ctx.lineTo(ellipsePoints[0].x, ellipsePoints[0].y);
+                         // ctx.stroke();
+                    }
+                }
+            }
+
+            canvas.addEventListener('mousedown', (event) => {
+                if (!currentImage) return;
+                const rect = canvas.getBoundingClientRect();
+                const x = event.clientX - rect.left;
+                const y = event.clientY - rect.top;
+
+                if (isRectToolActive) {
+                    isDrawing = true;
+                    startX = x;
+                    startY = y;
+                    selectionRect = null; 
+                    errorMessage.textContent = 'Drawing rectangle...';
+                    // No need to call redrawImageAndSelection here, mousemove will handle it
+                } else if (isEllipseToolActive) {
+                    ellipsePoints.push({ x, y });
+                    errorMessage.textContent = `Point ${ellipsePoints.length} added for ellipse. Add at least 5 points.`;
+                    redrawImageAndSelection(); // Redraw to show the new point and connecting lines
+                }
+            });
+
+            canvas.addEventListener('mousemove', (event) => {
+                if (!isDrawing || !isRectToolActive || !currentImage) return; // Only for rectangle drawing
+                const rect = canvas.getBoundingClientRect();
+                let currentX = event.clientX - rect.left;
+                let currentY = event.clientY - rect.top;
+
+                redrawImageAndSelection(); 
+
+                ctx.strokeStyle = 'red';
+                ctx.lineWidth = 2;
+                let width = currentX - startX;
+                let height = currentY - startY;
+                ctx.strokeRect(startX, startY, width, height);
+            });
+
+
+            canvas.addEventListener('mouseup', (event) => {
+                if (!isDrawing || !isRectToolActive || !currentImage) return; // Only for rectangle drawing
+                isDrawing = false;
+                const canvasRect = canvas.getBoundingClientRect(); // Renamed to avoid conflict
+                endX = event.clientX - canvasRect.left;
+                endY = event.clientY - canvasRect.top;
+
+                let rX = Math.min(startX, endX); // Renamed to avoid conflict
+                let rY = Math.min(startY, endY);
+                let rWidth = Math.abs(endX - startX);
+                let rHeight = Math.abs(endY - startY);
+                
+                functionOutput.innerHTML = '<p>Your function will appear here...</p>'; 
+
+                if (rWidth > 0 && rHeight > 0) {
+                    selectionRect = { x: rX, y: rY, width: rWidth, height: rHeight };
+                    errorMessage.textContent = `Rectangle selected. X: ${rX.toFixed(0)}, Y: ${rY.toFixed(0)}, W: ${rWidth.toFixed(0)}, H: ${rHeight.toFixed(0)}`;
+                    
+                    const x_min = selectionRect.x.toFixed(2);
+                    const x_max = (selectionRect.x + selectionRect.width).toFixed(2);
+                    const y_min = selectionRect.y.toFixed(2);
+                    const y_max = (selectionRect.y + selectionRect.height).toFixed(2);
+
+                    functionOutput.innerHTML = `
+                        <p><strong>Rectangle Definition:</strong></p>
+                        <p>${x_min} &le; x &le; ${x_max}</p>
+                        <p>${y_min} &le; y &le; ${y_max}</p>
+                    `;
+
+                } else {
+                    selectionRect = null; 
+                    errorMessage.textContent = 'Rectangle selection cancelled or too small.';
+                }
+                
+                redrawImageAndSelection(); 
+            });
+
+            // Add a general click listener to deactivate tool if user clicks outside canvas or on other controls
+            document.addEventListener('click', (event) => {
+                // This logic might need refinement based on desired UX for tool deactivation
+                if (!canvas.contains(event.target) && !rectToolButton.contains(event.target) && !ellipseToolButton.contains(event.target)) {
+                    // isRectToolActive = false;
+                    // isEllipseToolActive = false;
+                    // canvas.style.cursor = 'default';
+                    // errorMessage.textContent = 'Tools deactivated. Select a tool.';
+                }
+            });
+        });
+    </script>
+</body>
+</html>
