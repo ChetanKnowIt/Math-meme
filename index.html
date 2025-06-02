@@ -4,9 +4,23 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Math Meme Generator</title>
+    
+    <!-- Material Icons -->
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <!-- MDC Web CSS -->
+    <link href="https://unpkg.com/material-components-web@14.0.0/dist/material-components-web.min.css" rel="stylesheet">
+    <!-- Math.js (already present) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/14.2.1/math.min.js"></script>
+    
+    <!-- Google Font Roboto Mono (already present) -->
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&display=swap');
+        
+        /* MDC Button Icon alignment */
+        .mdc-button__icon {
+            vertical-align: middle;
+            margin-right: 8px; /* Default spacing if icon is present */
+        }
 
         body { 
             font-family: sans-serif; 
@@ -17,18 +31,28 @@
         }
         #canvasContainer { 
             border: 1px solid black; 
-            margin-bottom: 10px; 
-            position: relative; /* Ensures functionOutput is positioned relative to this */
-            background-color: #333; /* Darker background for canvas if image is transparent/small */
+            /* margin-bottom: 10px; // This might be handled by controls gap */
+            position: relative; 
+            background-color: #333;
+            max-width: 100%; /* Allow container to shrink */
+            box-sizing: border-box; /* Include border in width */
         }
-        canvas { 
+        canvas#imageCanvas { /* Target the canvas directly */
             display: block; 
+            max-width: 100%; /* Make canvas scale with container */
+            height: auto;    /* Maintain aspect ratio */
+            /* No explicit width/height here, it's set by JS from image or placeholder */
         }
         #controls { 
-            margin-bottom: 10px; 
-            display: flex; /* Align buttons and input nicely */
-            gap: 10px; /* Space between control elements */
+            padding: 16px; 
+            display: flex; 
+            flex-wrap: wrap; 
+            gap: 16px; 
             align-items: center;
+            justify-content: center; /* Center controls if they don't fill width */
+            width: 100%;
+            max-width: 800px; /* Optional: max width for controls on very wide screens */
+            box-sizing: border-box;
         }
         #functionOutput { 
             position: absolute;
@@ -57,11 +81,26 @@
 
     <div id="errorMessage"></div>
 
-    <div id="controls">
-        <input type="file" id="imageLoader" accept="image/*">
-        <p>Drawing Tools (coming soon):</p>
-        <button id="rectTool" disabled>Select Rectangle</button> 
-        <button id="ellipseTool" disabled>Select Ellipse</button> 
+    <div id="controls" style="padding: 16px; display: flex; flex-wrap: wrap; gap: 16px; align-items: center;">
+        <!-- Styled File Input -->
+        <input type="file" id="imageLoader" accept="image/*" style="display: none;">
+        <button id="uploadImageButton" class="mdc-button mdc-button--raised">
+            <span class="mdc-button__ripple"></span>
+            <i class="material-icons mdc-button__icon" aria-hidden="true">upload_file</i>
+            <span class="mdc-button__label">Upload Image</span>
+        </button>
+
+        <button id="rectTool" class="mdc-button mdc-button--outlined" disabled>
+            <span class="mdc-button__ripple"></span>
+            <i class="material-icons mdc-button__icon" aria-hidden="true">crop_square</i>
+            <span class="mdc-button__label">Rectangle</span>
+        </button> 
+        
+        <button id="ellipseTool" class="mdc-button mdc-button--outlined" disabled>
+            <span class="mdc-button__ripple"></span>
+            <i class="material-icons mdc-button__icon" aria-hidden="true">gesture</i>
+            <span class="mdc-button__label">Ellipse</span>
+        </button> 
     </div>
 
     <div id="canvasContainer">
@@ -73,17 +112,54 @@
         <p>Your function will appear here...</p>
     </div>
 
+    <script src="https://unpkg.com/material-components-web@14.0.0/dist/material-components-web.min.js"></script>
     <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            const imageLoader = document.getElementById('imageLoader');
-            const canvas = document.getElementById('imageCanvas');
-            const ctx = canvas.getContext('2d');
-            const functionOutput = document.getElementById('functionOutput');
-            const errorMessage = document.getElementById('errorMessage');
-            const rectToolButton = document.getElementById('rectTool');
-            const ellipseToolButton = document.getElementById('ellipseTool');
+    // Main application script
+    document.addEventListener('DOMContentLoaded', () => {
+        // Initialize MDC Web components FIRST
+        const mdcButtons = Array.from(document.querySelectorAll('.mdc-button'));
+        mdcButtons.forEach(button => new mdc.ripple.MDCRipple(button));
 
-            let currentImage = null; // To store the loaded image object
+        const uploadImageBtn = document.getElementById('uploadImageButton');
+        const imageLoader = document.getElementById('imageLoader'); // This is the hidden input
+        
+        if (uploadImageBtn && imageLoader) {
+            uploadImageBtn.addEventListener('click', () => {
+                imageLoader.click(); // imageLoader is the actual file input
+            });
+        }
+
+        // Variables for canvas, tools, etc. (ensure IDs match new HTML)
+        const canvas = document.getElementById('imageCanvas');
+        const ctx = canvas.getContext('2d');
+        const functionOutput = document.getElementById('functionOutput');
+        const errorMessage = document.getElementById('errorMessage');
+        const rectToolButton = document.getElementById('rectTool'); 
+        const ellipseToolButton = document.getElementById('ellipseTool');
+
+        // ... (rest of existing image loading logic, tool logic, etc.) ...
+        
+        function getScaledCoordinates(event) {
+            const rect = canvas.getBoundingClientRect(); // Current display size and position
+            const scaleX = canvas.width / rect.width;    // Relationship of internal size to display size
+            const scaleY = canvas.height / rect.height;
+
+            let clientX, clientY;
+            if (event.touches && event.touches.length > 0) { // Touch event
+                clientX = event.touches[0].clientX;
+                clientY = event.touches[0].clientY;
+            } else { // Mouse event
+                clientX = event.clientX;
+                clientY = event.clientY;
+            }
+            
+            const canvasX = (clientX - rect.left) * scaleX;
+            const canvasY = (clientY - rect.top) * scaleY;
+            
+            return { x: canvasX, y: canvasY };
+        }
+
+        let currentImage = null; // To store the loaded image object
             let isDrawing = false;
             let isRectToolActive = false;
             let startX, startY, endX, endY;
@@ -346,31 +422,32 @@
                 }
             }
 
-            canvas.addEventListener('mousedown', (event) => {
+            function handleDrawStart(event) {
                 if (!currentImage) return;
-                const rect = canvas.getBoundingClientRect();
-                const x = event.clientX - rect.left;
-                const y = event.clientY - rect.top;
+                // event.preventDefault(); // Called directly in touchstart
+
+                const coords = getScaledCoordinates(event);
 
                 if (isRectToolActive) {
                     isDrawing = true;
-                    startX = x;
-                    startY = y;
+                    startX = coords.x;
+                    startY = coords.y;
                     selectionRect = null; 
                     errorMessage.textContent = 'Drawing rectangle...';
-                    // No need to call redrawImageAndSelection here, mousemove will handle it
                 } else if (isEllipseToolActive) {
-                    ellipsePoints.push({ x, y });
+                    ellipsePoints.push({ x: coords.x, y: coords.y });
                     errorMessage.textContent = `Point ${ellipsePoints.length} added for ellipse. Add at least 5 points.`;
-                    redrawImageAndSelection(); // Redraw to show the new point and connecting lines
+                    redrawImageAndSelection(); 
                 }
-            });
+            }
 
-            canvas.addEventListener('mousemove', (event) => {
-                if (!isDrawing || !isRectToolActive || !currentImage) return; // Only for rectangle drawing
-                const rect = canvas.getBoundingClientRect();
-                let currentX = event.clientX - rect.left;
-                let currentY = event.clientY - rect.top;
+            function handleDrawMove(event) {
+                if (!isDrawing || !isRectToolActive || !currentImage) return; 
+                // event.preventDefault(); // Called directly in touchmove
+
+                const coords = getScaledCoordinates(event);
+                let currentX = coords.x;
+                let currentY = coords.y;
 
                 redrawImageAndSelection(); 
 
@@ -379,17 +456,18 @@
                 let width = currentX - startX;
                 let height = currentY - startY;
                 ctx.strokeRect(startX, startY, width, height);
-            });
+            }
 
+            function handleDrawEnd(event) {
+                if (!isDrawing || !isRectToolActive || !currentImage) return;
+                // event.preventDefault(); // Called directly in touchend if needed
 
-            canvas.addEventListener('mouseup', (event) => {
-                if (!isDrawing || !isRectToolActive || !currentImage) return; // Only for rectangle drawing
-                isDrawing = false;
-                const canvasRect = canvas.getBoundingClientRect(); // Renamed to avoid conflict
-                endX = event.clientX - canvasRect.left;
-                endY = event.clientY - canvasRect.top;
+                isDrawing = false; 
+                const coords = getScaledCoordinates(event); 
+                endX = coords.x;
+                endY = coords.y;
 
-                let rX = Math.min(startX, endX); // Renamed to avoid conflict
+                let rX = Math.min(startX, endX);
                 let rY = Math.min(startY, endY);
                 let rWidth = Math.abs(endX - startX);
                 let rHeight = Math.abs(endY - startY);
@@ -410,19 +488,51 @@
                         <p>${x_min} &le; x &le; ${x_max}</p>
                         <p>${y_min} &le; y &le; ${y_max}</p>
                     `;
-
                 } else {
                     selectionRect = null; 
                     errorMessage.textContent = 'Rectangle selection cancelled or too small.';
                 }
                 
                 redrawImageAndSelection(); 
+            }
+
+            // Mouse events
+            canvas.addEventListener('mousedown', handleDrawStart);
+            canvas.addEventListener('mousemove', handleDrawMove);
+            canvas.addEventListener('mouseup', handleDrawEnd);
+            canvas.addEventListener('mouseleave', () => {
+                if (isDrawing && isRectToolActive) { 
+                    // isDrawing = false; // Reset isDrawing to prevent sticky drawing
+                    // errorMessage.textContent = 'Rectangle drawing cancelled: mouse left canvas.';
+                    // redrawImageAndSelection(); // Clear any temp rect
+                    // Or, consider completing the drawing at last known valid point if available
+                    // For now, simply stopping the drawing action if mouse leaves while drawing might be enough
+                    // handleDrawEnd might be called here if we can simulate event/coords, but might be complex.
+                }
+            });
+
+            // Touch events
+            canvas.addEventListener('touchstart', (event) => {
+                event.preventDefault(); 
+                handleDrawStart(event);
+            });
+            canvas.addEventListener('touchmove', (event) => {
+                event.preventDefault(); 
+                handleDrawMove(event);
+            });
+            canvas.addEventListener('touchend', (event) => {
+                event.preventDefault(); 
+                handleDrawEnd(event);
             });
 
             // Add a general click listener to deactivate tool if user clicks outside canvas or on other controls
             document.addEventListener('click', (event) => {
                 // This logic might need refinement based on desired UX for tool deactivation
-                if (!canvas.contains(event.target) && !rectToolButton.contains(event.target) && !ellipseToolButton.contains(event.target)) {
+                // Consider if #uploadImageButton should also be part of the condition
+                if (!canvas.contains(event.target) && 
+                    !rectToolButton.contains(event.target) && 
+                    !ellipseToolButton.contains(event.target) &&
+                    !document.getElementById('uploadImageButton').contains(event.target) ) {
                     // isRectToolActive = false;
                     // isEllipseToolActive = false;
                     // canvas.style.cursor = 'default';
@@ -431,5 +541,6 @@
             });
         });
     </script>
+    <!-- MDC JS already loaded above the main script -->
 </body>
 </html>
