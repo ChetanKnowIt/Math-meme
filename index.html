@@ -4,61 +4,61 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Math Meme Generator</title>
-    
+
     <!-- Material Icons -->
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     <!-- MDC Web CSS -->
     <link href="https://unpkg.com/material-components-web@14.0.0/dist/material-components-web.min.css" rel="stylesheet">
     <!-- Math.js (already present) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/14.2.1/math.min.js"></script>
-    
+
     <!-- Google Font Roboto Mono (already present) -->
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&display=swap');
-        
+
         /* MDC Button Icon alignment */
         .mdc-button__icon {
             vertical-align: middle;
             margin-right: 8px; /* Default spacing if icon is present */
         }
 
-        body { 
-            font-family: sans-serif; 
-            margin: 20px; 
-            display: flex; 
-            flex-direction: column; 
-            align-items: center; 
+        body {
+            font-family: sans-serif;
+            margin: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
         }
-        #canvasContainer { 
-            border: 1px solid black; 
+        #canvasContainer {
+            border: 1px solid black;
             /* margin-bottom: 10px; // This might be handled by controls gap */
-            position: relative; 
+            position: relative;
             background-color: #333;
             max-width: 100%; /* Allow container to shrink */
             box-sizing: border-box; /* Include border in width */
         }
         canvas#imageCanvas { /* Target the canvas directly */
-            display: block; 
+            display: block;
             max-width: 100%; /* Make canvas scale with container */
             height: auto;    /* Maintain aspect ratio */
             /* No explicit width/height here, it's set by JS from image or placeholder */
         }
-        #controls { 
-            padding: 16px; 
-            display: flex; 
-            flex-wrap: wrap; 
-            gap: 16px; 
+        #controls {
+            padding: 16px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
             align-items: center;
             justify-content: center; /* Center controls if they don't fill width */
             width: 100%;
             max-width: 800px; /* Optional: max width for controls on very wide screens */
             box-sizing: border-box;
         }
-        #functionOutput { 
+        #functionOutput {
             position: absolute;
             top: 10px;
             left: 10px;
-            padding: 5px 8px; 
+            padding: 5px 8px;
             background-color: rgba(0, 0, 0, 0.5); /* Semi-transparent black background */
             color: #00ff00; /* Bright green HUD text */
             font-family: 'Roboto Mono', monospace;
@@ -69,8 +69,8 @@
             max-width: calc(100% - 20px); /* Ensure it doesn't overflow container */
             box-sizing: border-box;
         }
-        #errorMessage { 
-            color: red; 
+        #errorMessage {
+            color: red;
             margin-bottom: 10px;
             min-height: 1.2em; /* Prevent layout shift when message appears/disappears */
         }
@@ -94,13 +94,18 @@
             <span class="mdc-button__ripple"></span>
             <i class="material-icons mdc-button__icon" aria-hidden="true">crop_square</i>
             <span class="mdc-button__label">Rectangle</span>
-        </button> 
-        
+        </button>
+
         <button id="ellipseTool" class="mdc-button mdc-button--outlined" disabled>
             <span class="mdc-button__ripple"></span>
             <i class="material-icons mdc-button__icon" aria-hidden="true">gesture</i>
             <span class="mdc-button__label">Ellipse</span>
-        </button> 
+        </button>
+        <button id="runTestsButton" class="mdc-button mdc-button--outlined">
+            <span class="mdc-button__ripple"></span>
+            <i class="material-icons mdc-button__icon" aria-hidden="true">science</i>
+            <span class="mdc-button__label">Run Tests</span>
+        </button>
     </div>
 
     <div id="canvasContainer">
@@ -117,12 +122,18 @@
     // Main application script
     document.addEventListener('DOMContentLoaded', () => {
         // Initialize MDC Web components FIRST
+        // Query all buttons that need ripple, including the new test button
         const mdcButtons = Array.from(document.querySelectorAll('.mdc-button'));
-        mdcButtons.forEach(button => new mdc.ripple.MDCRipple(button));
+        mdcButtons.forEach(button => {
+            if (button.id !== 'runTestsButton') { // Assuming runTestsButton specific init below
+                 new mdc.ripple.MDCRipple(button);
+            }
+        });
+
 
         const uploadImageBtn = document.getElementById('uploadImageButton');
         const imageLoader = document.getElementById('imageLoader'); // This is the hidden input
-        
+
         if (uploadImageBtn && imageLoader) {
             uploadImageBtn.addEventListener('click', () => {
                 imageLoader.click(); // imageLoader is the actual file input
@@ -134,15 +145,16 @@
         const ctx = canvas.getContext('2d');
         const functionOutput = document.getElementById('functionOutput');
         const errorMessage = document.getElementById('errorMessage');
-        const rectToolButton = document.getElementById('rectTool'); 
+        const rectToolButton = document.getElementById('rectTool');
         const ellipseToolButton = document.getElementById('ellipseTool');
 
         // ... (rest of existing image loading logic, tool logic, etc.) ...
-        
-        function getScaledCoordinates(event) {
-            const rect = canvas.getBoundingClientRect(); // Current display size and position
-            const scaleX = canvas.width / rect.width;    // Relationship of internal size to display size
-            const scaleY = canvas.height / rect.height;
+
+        // Made global and accepts canvasEl
+        function getScaledCoordinates(event, canvasEl) {
+            const rect = canvasEl.getBoundingClientRect(); // Current display size and position
+            const scaleX = canvasEl.width / rect.width;    // Relationship of internal size to display size
+            const scaleY = canvasEl.height / rect.height;
 
             let clientX, clientY;
             if (event.touches && event.touches.length > 0) { // Touch event
@@ -152,12 +164,30 @@
                 clientX = event.clientX;
                 clientY = event.clientY;
             }
-            
+
             const canvasX = (clientX - rect.left) * scaleX;
             const canvasY = (clientY - rect.top) * scaleY;
-            
+
             return { x: canvasX, y: canvasY };
         }
+        window.getScaledCoordinates = getScaledCoordinates; // Expose globally for tests
+
+        function generateRectangleEquationString(rectObj) {
+            if (!rectObj || rectObj.width <= 0 || rectObj.height <= 0) {
+                return "<p>Invalid rectangle dimensions for equation.</p>";
+            }
+            const x_min = rectObj.x.toFixed(2);
+            const x_max = (rectObj.x + rectObj.width).toFixed(2);
+            const y_min = rectObj.y.toFixed(2);
+            const y_max = (rectObj.y + rectObj.height).toFixed(2);
+
+            return `
+                <p><strong>Rectangle Definition:</strong></p>
+                <p>${x_min} &le; x &le; ${x_max}</p>
+                <p>${y_min} &le; y &le; ${y_max}</p>
+            `;
+        }
+        window.generateRectangleEquationString = generateRectangleEquationString; // Make global for tests
 
         let currentImage = null; // To store the loaded image object
             let isDrawing = false;
@@ -293,7 +323,7 @@
                 try {
                     const D_svd = math.svd(D); // D = U S V^T
                     const a = math.column(D_svd.V, D_svd.V.size()[1] - 1); // Last column of V (smallest singular value)
-                    
+
                     let [A, B, C, D_coeff, E_coeff, F_coeff] = a.toArray().flat();
 
                     if (4 * A * C - B * B <= 0) {
@@ -340,7 +370,7 @@
 
                 let pointsDrawn = 0;
                 const step = 1; // Pixel step
-                
+
                 // Attempt for y1 path
                 let firstY1 = true;
                 for (let x = 0; x < canvas.width; x += step) {
@@ -376,7 +406,7 @@
                     } else { firstY2 = true; }
                 }
                 ctx.stroke();
-                if(pointsDrawn === 0){ 
+                if(pointsDrawn === 0){
                      errorMessage.textContent += " Could not draw the ellipse (no valid points on canvas).";
                 }
             }
@@ -426,30 +456,30 @@
                 if (!currentImage) return;
                 // event.preventDefault(); // Called directly in touchstart
 
-                const coords = getScaledCoordinates(event);
+                const coords = getScaledCoordinates(event, canvas); // Pass canvas instance
 
                 if (isRectToolActive) {
                     isDrawing = true;
                     startX = coords.x;
                     startY = coords.y;
-                    selectionRect = null; 
+                    selectionRect = null;
                     errorMessage.textContent = 'Drawing rectangle...';
                 } else if (isEllipseToolActive) {
                     ellipsePoints.push({ x: coords.x, y: coords.y });
                     errorMessage.textContent = `Point ${ellipsePoints.length} added for ellipse. Add at least 5 points.`;
-                    redrawImageAndSelection(); 
+                    redrawImageAndSelection();
                 }
             }
 
             function handleDrawMove(event) {
-                if (!isDrawing || !isRectToolActive || !currentImage) return; 
+                if (!isDrawing || !isRectToolActive || !currentImage) return;
                 // event.preventDefault(); // Called directly in touchmove
 
-                const coords = getScaledCoordinates(event);
+                const coords = getScaledCoordinates(event, canvas); // Pass canvas instance
                 let currentX = coords.x;
                 let currentY = coords.y;
 
-                redrawImageAndSelection(); 
+                redrawImageAndSelection();
 
                 ctx.strokeStyle = 'red';
                 ctx.lineWidth = 2;
@@ -462,8 +492,8 @@
                 if (!isDrawing || !isRectToolActive || !currentImage) return;
                 // event.preventDefault(); // Called directly in touchend if needed
 
-                isDrawing = false; 
-                const coords = getScaledCoordinates(event); 
+                isDrawing = false;
+                const coords = getScaledCoordinates(event, canvas); // Pass canvas instance
                 endX = coords.x;
                 endY = coords.y;
 
@@ -471,29 +501,21 @@
                 let rY = Math.min(startY, endY);
                 let rWidth = Math.abs(endX - startX);
                 let rHeight = Math.abs(endY - startY);
-                
-                functionOutput.innerHTML = '<p>Your function will appear here...</p>'; 
+
+                functionOutput.innerHTML = '<p>Your function will appear here...</p>';
 
                 if (rWidth > 0 && rHeight > 0) {
                     selectionRect = { x: rX, y: rY, width: rWidth, height: rHeight };
                     errorMessage.textContent = `Rectangle selected. X: ${rX.toFixed(0)}, Y: ${rY.toFixed(0)}, W: ${rWidth.toFixed(0)}, H: ${rHeight.toFixed(0)}`;
-                    
-                    const x_min = selectionRect.x.toFixed(2);
-                    const x_max = (selectionRect.x + selectionRect.width).toFixed(2);
-                    const y_min = selectionRect.y.toFixed(2);
-                    const y_max = (selectionRect.y + selectionRect.height).toFixed(2);
 
-                    functionOutput.innerHTML = `
-                        <p><strong>Rectangle Definition:</strong></p>
-                        <p>${x_min} &le; x &le; ${x_max}</p>
-                        <p>${y_min} &le; y &le; ${y_max}</p>
-                    `;
+                    functionOutput.innerHTML = generateRectangleEquationString(selectionRect);
+
                 } else {
-                    selectionRect = null; 
+                    selectionRect = null;
                     errorMessage.textContent = 'Rectangle selection cancelled or too small.';
                 }
-                
-                redrawImageAndSelection(); 
+
+                redrawImageAndSelection();
             }
 
             // Mouse events
@@ -501,7 +523,7 @@
             canvas.addEventListener('mousemove', handleDrawMove);
             canvas.addEventListener('mouseup', handleDrawEnd);
             canvas.addEventListener('mouseleave', () => {
-                if (isDrawing && isRectToolActive) { 
+                if (isDrawing && isRectToolActive) {
                     // isDrawing = false; // Reset isDrawing to prevent sticky drawing
                     // errorMessage.textContent = 'Rectangle drawing cancelled: mouse left canvas.';
                     // redrawImageAndSelection(); // Clear any temp rect
@@ -513,15 +535,15 @@
 
             // Touch events
             canvas.addEventListener('touchstart', (event) => {
-                event.preventDefault(); 
+                event.preventDefault();
                 handleDrawStart(event);
             });
             canvas.addEventListener('touchmove', (event) => {
-                event.preventDefault(); 
+                event.preventDefault();
                 handleDrawMove(event);
             });
             canvas.addEventListener('touchend', (event) => {
-                event.preventDefault(); 
+                event.preventDefault();
                 handleDrawEnd(event);
             });
 
@@ -529,8 +551,8 @@
             document.addEventListener('click', (event) => {
                 // This logic might need refinement based on desired UX for tool deactivation
                 // Consider if #uploadImageButton should also be part of the condition
-                if (!canvas.contains(event.target) && 
-                    !rectToolButton.contains(event.target) && 
+                if (!canvas.contains(event.target) &&
+                    !rectToolButton.contains(event.target) &&
                     !ellipseToolButton.contains(event.target) &&
                     !document.getElementById('uploadImageButton').contains(event.target) ) {
                     // isRectToolActive = false;
@@ -539,8 +561,24 @@
                     // errorMessage.textContent = 'Tools deactivated. Select a tool.';
                 }
             });
+
+            const runTestsButton = document.getElementById('runTestsButton');
+            if (runTestsButton) {
+                new mdc.ripple.MDCRipple(runTestsButton); // Initialize its ripple
+                runTestsButton.addEventListener('click', () => {
+                    if (typeof runAllTests === 'function') {
+                        runAllTests();
+                    } else {
+                        console.error("runAllTests function not found. Ensure tests.js is loaded.");
+                        const errorMsgDiv = document.getElementById('errorMessage');
+                        if (errorMsgDiv) {
+                            errorMsgDiv.textContent = "Test runner function not found.";
+                        }
+                    }
+                });
+            }
         });
     </script>
-    <!-- MDC JS already loaded above the main script -->
+    <script src="tests.js"></script>
 </body>
 </html>
